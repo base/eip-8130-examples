@@ -1,0 +1,18 @@
+[profile.default]
+solc = "0.8.36"
+optimizer = true
+via_ir = true
+evm_version = "osaka"
+remappings = [
+    "eip-8130/=lib/eip-8130/src/",
+    "eip-8130-test/=lib/eip-8130/test/",
+    "openzeppelin/=lib/openzeppelin-contracts/contracts/",
+    "solady/=lib/solady/src/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+[lint]
+lint_on_build = false
+exclude_lints = [
+    "asm-keccak256",
+]
