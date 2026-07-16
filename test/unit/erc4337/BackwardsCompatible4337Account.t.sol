@@ -6,7 +6,7 @@ import {
     BackwardsCompatible4337Account,
     PackedUserOperation,
     SignedActorChanges
-} from "../../../src/accounts/example/BackwardsCompatible4337Account.sol";
+} from "../../../src/accounts/erc4337/BackwardsCompatible4337Account.sol";
 import {AccountConfiguration} from "eip-8130/AccountConfiguration.sol";
 import {AccountConfigurationTest} from "eip-8130-test/lib/AccountConfigurationTest.sol";
 

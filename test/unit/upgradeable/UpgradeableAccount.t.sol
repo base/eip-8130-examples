@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {UpgradeableAccount} from "../../../src/accounts/UpgradeableAccount.sol";
-import {UpgradeableProxy} from "../../../src/accounts/UpgradeableProxy.sol";
+import {UpgradeableAccount} from "../../../src/accounts/upgradeable/UpgradeableAccount.sol";
+import {UpgradeableProxy} from "../../../src/accounts/upgradeable/UpgradeableProxy.sol";
 import {UUPSUpgradeable} from "solady/utils/UUPSUpgradeable.sol";
 import {Call, DefaultAccount} from "eip-8130/accounts/DefaultAccount.sol";
 import {AccountConfiguration} from "eip-8130/AccountConfiguration.sol";

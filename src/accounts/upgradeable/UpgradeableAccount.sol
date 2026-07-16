@@ -10,7 +10,7 @@ import {DefaultAccount} from "eip-8130/accounts/DefaultAccount.sol";
 ///         unchanged; upgrade to a 4337-capable implementation (see {BackwardsCompatible4337Account}) or any
 ///         future capability as needed.
 ///
-///         Deploy behind an UpgradeableProxy instead of ERC-1167.
+///         Deploy behind an {UpgradeableProxy} instead of ERC-1167.
 ///         7702 accounts don't need this — they can re-delegate anytime.
 ///
 ///         Upgrades are authorized via upgradeBySignature — an unrestricted-owner-signed, relayable upgrade with
