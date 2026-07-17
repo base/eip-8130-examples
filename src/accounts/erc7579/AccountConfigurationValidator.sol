@@ -42,7 +42,9 @@ contract AccountConfigurationValidator is IERC7579Validator {
     /// @dev `msg.sender` is the smart account. Authenticates `userOp.signature` over `userOpHash` via
     ///      AccountConfiguration; does not enforce elevated scope bits (the account / EntryPoint path should).
     function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash) external view returns (uint256) {
-        try ACCOUNT_CONFIGURATION.authenticateActor(msg.sender, userOpHash, userOp.signature) returns (uint8, address) {
+        try ACCOUNT_CONFIGURATION.authenticateActor(msg.sender, userOpHash, userOp.signature) returns (
+            bytes32, uint8, address
+        ) {
             return VALIDATION_SUCCESS;
         } catch {
             return VALIDATION_FAILED;

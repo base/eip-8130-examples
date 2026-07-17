@@ -81,7 +81,7 @@ contract UpgradeableAccount is DefaultAccount, UUPSUpgradeable {
         );
 
         // Only an unrestricted owner (scope 0) may authorize an upgrade; there is no elevated "admin" scope bit.
-        (uint8 scope,) = ACCOUNT_CONFIGURATION.authenticateActor(address(this), digest, auth);
+        (, uint8 scope,) = ACCOUNT_CONFIGURATION.authenticateActor(address(this), digest, auth);
         if (scope != 0) revert UpgradeUnauthorized();
 
         // Reuse Solady's tested upgrade path (proxiableUUID check, Upgraded event, optional init delegatecall).
