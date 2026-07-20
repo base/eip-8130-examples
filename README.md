@@ -84,6 +84,24 @@ Same capability — atomic batch calls — different encoding:
 
 Auth for the 7579 example goes through `{AccountConfigurationValidator}` (a `MODULE_TYPE_VALIDATOR`), not a key stored on the account.
 
+## Deployment
+
+The examples deployment compiles `AccountConfiguration` from the pinned `lib/eip-8130` submodule, then deploys it
+with the `UpgradeableAccount` and `BackwardsCompatible4337Account` implementation singletons:
+
+```bash
+# Preview deterministic addresses and account proxy bytecode.
+forge script script/Deploy.s.sol --sig "addresses()"
+
+# Deploy all three contracts.
+forge script script/Deploy.s.sol \
+  --rpc-url "$RPC_URL" --broadcast --private-key "$PRIVATE_KEY"
+```
+
+The script uses a deterministic CREATE2 factory and zero salt. Each deployment is idempotent, so an existing
+contract at its computed address is reused. The script also prints the 93-byte `UpgradeableProxy` bytecode and the
+45-byte ERC-1167 runtime for creating accounts backed by each implementation.
+
 ## Getting started
 
 ```bash
