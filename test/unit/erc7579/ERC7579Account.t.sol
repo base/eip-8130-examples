@@ -2,8 +2,8 @@
 pragma solidity 0.8.36;
 
 import {Call, DefaultAccount} from "eip-8130/accounts/DefaultAccount.sol";
-import {AccountConfiguration} from "eip-8130/AccountConfiguration.sol";
-import {AccountConfigurationTest} from "eip-8130-test/lib/AccountConfigurationTest.sol";
+import {Keystore} from "eip-8130/Keystore.sol";
+import {KeystoreTest} from "eip-8130-test/lib/KeystoreTest.sol";
 import {MODULE_TYPE_VALIDATOR} from "openzeppelin/interfaces/draft-IERC7579.sol";
 
 import {AccountConfigurationValidator} from "../../../src/accounts/erc7579/AccountConfigurationValidator.sol";
@@ -24,7 +24,7 @@ contract ERC7579MockTarget {
     }
 }
 
-contract ERC7579AccountTest is AccountConfigurationTest {
+contract ERC7579AccountTest is KeystoreTest {
     uint256 constant ACTOR_PK = 100;
 
     /// @dev ERC-7821 mode: batch, revert-on-fail, no opData support bit.
@@ -39,18 +39,18 @@ contract ERC7579AccountTest is AccountConfigurationTest {
     function setUp() public virtual override {
         super.setUp();
         target = new ERC7579MockTarget();
-        configValidator = new AccountConfigurationValidator(address(accountConfiguration));
-        impl = address(new ERC7579Account(address(accountConfiguration)));
+        configValidator = new AccountConfigurationValidator(address(keystore));
+        impl = address(new ERC7579Account(address(keystore)));
     }
 
     function _create7579Account(uint256 pk) internal returns (address account, bytes32 actorId) {
-        actorId = bytes32(bytes20(vm.addr(pk)));
-        AccountConfiguration.InitialActor[] memory actors = new AccountConfiguration.InitialActor[](1);
-        actors[0] = AccountConfiguration.InitialActor({
+        actorId = bytes32(uint256(uint160(vm.addr(pk))));
+        Keystore.InitialActor[] memory actors = new Keystore.InitialActor[](1);
+        actors[0] = Keystore.InitialActor({
             actorId: actorId, authenticator: address(k1Authenticator), scope: 0, policyData: ""
         });
         bytes memory proxyBytecode = _computeERC1167Bytecode(impl);
-        account = accountConfiguration.createAccount(bytes32(0), proxyBytecode, actors);
+        account = keystore.createAccount(bytes32(0), proxyBytecode, actors);
     }
 
     function _installConfigValidator(address account) internal {
@@ -105,7 +105,7 @@ contract ERC7579AccountTest is AccountConfigurationTest {
         assertEq(target.value(), 11);
     }
 
-    function test_execute_withOpData_relaysViaAccountConfiguration() public {
+    function test_execute_withOpData_relaysViaKeystore() public {
         (address account,) = _create7579Account(ACTOR_PK);
 
         BatchCall[] memory batch = new BatchCall[](1);
@@ -135,7 +135,8 @@ contract ERC7579AccountTest is AccountConfigurationTest {
         _installConfigValidator(account);
 
         bytes32 hash = keccak256("gm");
-        bytes memory inner = _buildK1Auth(ACTOR_PK, hash);
+        // validator(20) || account-scoped envelope (sigType || authenticator || sig over the replaySafeHash digest).
+        bytes memory inner = _wrapLocal(_buildK1Auth(ACTOR_PK, keystore.replaySafeHash(account, block.chainid, hash)));
         bytes memory signature = abi.encodePacked(address(configValidator), inner);
 
         bytes4 result = ERC7579Account(payable(account)).isValidSignature(hash, signature);
@@ -147,7 +148,7 @@ contract ERC7579AccountTest is AccountConfigurationTest {
         _installConfigValidator(account);
 
         bytes32 hash = keccak256("gm");
-        bytes memory inner = _buildK1Auth(999, hash);
+        bytes memory inner = _wrapLocal(_buildK1Auth(999, keystore.replaySafeHash(account, block.chainid, hash)));
         bytes memory signature = abi.encodePacked(address(configValidator), inner);
 
         bytes4 result = ERC7579Account(payable(account)).isValidSignature(hash, signature);

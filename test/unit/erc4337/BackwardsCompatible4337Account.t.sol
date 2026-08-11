@@ -2,13 +2,11 @@
 pragma solidity ^0.8.30;
 
 import {DefaultAccount, Call, TRUSTED_EXECUTOR} from "eip-8130/accounts/DefaultAccount.sol";
-import {
-    BackwardsCompatible4337Account,
-    PackedUserOperation,
-    SignedActorChanges
-} from "../../../src/accounts/erc4337/BackwardsCompatible4337Account.sol";
-import {AccountConfiguration} from "eip-8130/AccountConfiguration.sol";
-import {AccountConfigurationTest} from "eip-8130-test/lib/AccountConfigurationTest.sol";
+import {BackwardsCompatible4337Account, PackedUserOperation} from
+    "../../../src/accounts/erc4337/BackwardsCompatible4337Account.sol";
+import {Keystore} from "eip-8130/Keystore.sol";
+import {Scopes} from "eip-8130/libraries/Scopes.sol";
+import {KeystoreTest} from "eip-8130-test/lib/KeystoreTest.sol";
 
 contract UserOpMockTarget {
     uint256 public value;
@@ -25,14 +23,10 @@ contract UserOpMockTarget {
 /// @notice ERC-4337 conformance suite for {BackwardsCompatible4337Account}. The EntryPoint is authorized as a
 ///         config-driven TRUSTED_EXECUTOR actor (seeded into the initial actor set at creation), so it is revocable
 ///         and version-agnostic — the single opinionated 4337 model for the repo.
-contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
+contract BackwardsCompatible4337AccountTest is KeystoreTest {
     uint256 constant ACTOR_PK = 100;
 
-    uint8 constant SCOPE_SENDER = 0x01;
-    uint8 constant SCOPE_SELF_PAYER = 0x08;
-    uint8 constant SCOPE_SPONSOR_PAYER = 0x10;
-
-    bytes32 constant SIGNED_ACTOR_CHANGES_MAGIC = keccak256("ERC4337Account.signedActorChanges.v1");
+    bytes32 constant SIGNED_ACCOUNT_CHANGES_MAGIC = keccak256("ERC4337Account.signedAccountChanges.v1");
 
     UserOpMockTarget public target;
     address public impl;
@@ -40,27 +34,32 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
     function setUp() public virtual override {
         super.setUp();
         target = new UserOpMockTarget();
-        impl = address(new BackwardsCompatible4337Account(address(accountConfiguration)));
+        impl = address(new BackwardsCompatible4337Account(address(keystore)));
     }
 
     /// @dev Create an account from `impl` with `pk` as the unrestricted owner, seeding the EntryPoint as a
     ///      TRUSTED_EXECUTOR actor so it is an authorized caller from the account's first op (the config-driven
     ///      model has no hardcoded EntryPoint). Returns (account, ownerActorId).
     function _create4337Account(uint256 pk) internal returns (address account, bytes32 actorId) {
-        actorId = bytes32(bytes20(vm.addr(pk)));
-        AccountConfiguration.InitialActor memory owner = AccountConfiguration.InitialActor({
+        actorId = _actorId(vm.addr(pk));
+        Keystore.InitialActor memory owner = Keystore.InitialActor({
             actorId: actorId, authenticator: address(k1Authenticator), scope: 0, policyData: ""
         });
-        AccountConfiguration.InitialActor memory ep = AccountConfiguration.InitialActor({
-            actorId: bytes32(bytes20(ENTRY_POINT)), authenticator: TRUSTED_EXECUTOR, scope: 0, policyData: ""
+        Keystore.InitialActor memory ep = Keystore.InitialActor({
+            actorId: _actorId(ENTRY_POINT), authenticator: TRUSTED_EXECUTOR, scope: 0, policyData: ""
         });
 
-        AccountConfiguration.InitialActor[] memory actors = new AccountConfiguration.InitialActor[](2);
+        Keystore.InitialActor[] memory actors = new Keystore.InitialActor[](2);
         (actors[0], actors[1]) = owner.actorId < ep.actorId ? (owner, ep) : (ep, owner);
-        account = accountConfiguration.createAccount(bytes32(0), _computeERC1167Bytecode(impl), actors);
+        account = keystore.createAccount(bytes32(0), _computeERC1167Bytecode(impl), actors);
     }
 
     // ── Shared helpers ──
+
+    /// @dev Address-derived actorId (right-aligned into a 32-byte word, per {ActorId.fromAddress}).
+    function _actorId(address a) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(a)));
+    }
 
     function _singleCall(address t, uint256 v, bytes memory d) internal pure returns (Call[] memory calls) {
         calls = new Call[](1);
@@ -93,63 +92,38 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         return abi.encodeCall(DefaultAccount.executeBatch, (_singleCall(t, v, d)));
     }
 
+    /// @dev Chain-local ERC-1271 envelope over the account-scoped replaySafeHash digest.
+    function _erc1271Auth(address account, uint256 pk, bytes32 hash) internal view returns (bytes memory) {
+        return _wrapLocal(_buildK1Auth(pk, keystore.replaySafeHash(account, block.chainid, hash)));
+    }
+
     /// @dev Authorizes a new K1 actor on `account` with the given scope/policy, signed by the unrestricted owner
-    ///      (`ownerPk`) via `applySignedActorChanges`. Returns the new actor's id. Policy data is attached whenever
-    ///      `scope` carries SCOPE_POLICY.
+    ///      (`ownerPk`) via `applySignedAccountChanges`. Returns the new actor's id. Policy data is attached whenever
+    ///      `scope` carries Scopes.POLICY. Granted UNBOUNDED (never-expiring) on a sequenced batch.
     function _authorizeScopedActor(
         address account,
         uint256 ownerPk,
         uint256 newPk,
-        uint8 scope,
+        uint16 scope,
         address policyManager,
         bytes32 commitment
     ) internal returns (bytes32 newActorId) {
-        newActorId = bytes32(bytes20(vm.addr(newPk)));
+        newActorId = _actorId(vm.addr(newPk));
         bytes memory policyData =
-            scope & accountConfiguration.SCOPE_POLICY() == 0 ? bytes("") : abi.encodePacked(policyManager, commitment);
-
-        AccountConfiguration.ActorChange[] memory changes = new AccountConfiguration.ActorChange[](1);
-        changes[0] = AccountConfiguration.ActorChange({
-            actorId: newActorId,
-            changeType: 0x01,
-            data: abi.encode(
-                AccountConfiguration.ActorConfig({authenticator: address(k1Authenticator), scope: scope, expiry: 0}),
-                policyData
-            )
-        });
-
-        uint64 seq = accountConfiguration.getChangeSequences(account).local;
-        bytes32 digest = _computeActorChangeBatchDigest(account, uint64(block.chainid), seq, changes);
-        accountConfiguration.applySignedActorChanges(
-            account, uint64(block.chainid), changes, _buildK1Auth(ownerPk, digest)
+            scope & Scopes.POLICY == 0 ? bytes("") : abi.encodePacked(policyManager, commitment);
+        _applyLocal(
+            ownerPk, account, _one(_authorizeChange(newActorId, address(k1Authenticator), scope, UNBOUNDED, policyData))
         );
     }
 
-    function _authorizeK1ActorChange(uint256 newPk)
+    /// @dev A one-element authorize-actor change batch adding `newPk` as an unrestricted (admin) K1 actor.
+    function _authorizeK1ChangeArray(uint256 newPk)
         internal
         view
-        returns (AccountConfiguration.ActorChange[] memory changes, bytes32 newActorId)
+        returns (Keystore.AccountChange[] memory changes, bytes32 newActorId)
     {
-        newActorId = bytes32(bytes20(vm.addr(newPk)));
-        changes = new AccountConfiguration.ActorChange[](1);
-        changes[0] = AccountConfiguration.ActorChange({
-            actorId: newActorId,
-            changeType: 0x01,
-            data: abi.encode(
-                AccountConfiguration.ActorConfig({authenticator: address(k1Authenticator), scope: 0x00, expiry: 0}),
-                bytes("")
-            )
-        });
-    }
-
-    function _signedSet(
-        address account,
-        uint64 seq,
-        uint256 signerPk,
-        AccountConfiguration.ActorChange[] memory changes
-    ) internal view returns (SignedActorChanges memory) {
-        bytes32 changeDigest = _computeActorChangeBatchDigest(account, uint64(block.chainid), seq, changes);
-        return SignedActorChanges({changes: changes, auth: _buildK1Auth(signerPk, changeDigest)});
+        newActorId = _actorId(vm.addr(newPk));
+        changes = _one(_authorizeChange(newActorId, address(k1Authenticator), 0, UNBOUNDED, ""));
     }
 
     // ── Always-authorized callers ──
@@ -169,25 +143,14 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         assertFalse(DefaultAccount(payable(account)).isAuthorizedCaller(address(0xdead)));
     }
 
-    // ── Trusted-executor actor (relayer / PolicyManager registered via AccountConfiguration) ──
+    // ── Trusted-executor actor (relayer / PolicyManager registered via the Keystore) ──
 
     function test_trustedExecutorActorIsAuthorized() public {
         (address account,) = _create4337Account(ACTOR_PK);
         address relayer = address(0xBEEF);
 
-        AccountConfiguration.ActorChange[] memory changes = new AccountConfiguration.ActorChange[](1);
-        changes[0] = AccountConfiguration.ActorChange({
-            actorId: bytes32(bytes20(relayer)),
-            changeType: 0x01,
-            data: abi.encode(
-                AccountConfiguration.ActorConfig({authenticator: TRUSTED_EXECUTOR, scope: SCOPE_SENDER, expiry: 0}),
-                bytes("")
-            )
-        });
-        uint64 seq = accountConfiguration.getChangeSequences(account).local;
-        bytes32 digest = _computeActorChangeBatchDigest(account, uint64(block.chainid), seq, changes);
-        accountConfiguration.applySignedActorChanges(
-            account, uint64(block.chainid), changes, _buildK1Auth(ACTOR_PK, digest)
+        _applyLocal(
+            ACTOR_PK, account, _one(_authorizeChange(_actorId(relayer), TRUSTED_EXECUTOR, Scopes.SENDER, UNBOUNDED, ""))
         );
 
         assertTrue(DefaultAccount(payable(account)).isAuthorizedCaller(relayer));
@@ -259,71 +222,70 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         assertEq(ENTRY_POINT.balance - epBalanceBefore, prefund);
     }
 
-    // ── validateUserOp: validation-phase actor changes ──
+    // ── validateUserOp: validation-phase account changes ──
 
     /// @notice A single UserOperation can rotate/add a key during validation; the op is then authenticated as
     ///         usual by `opAuth` — produced here by the brand-new key.
-    function test_validateUserOp_appliesSignedActorChanges() public {
+    function test_validateUserOp_appliesSignedAccountChanges() public {
         (address account,) = _create4337Account(ACTOR_PK);
 
         uint256 newPk = 101;
-        (AccountConfiguration.ActorChange[] memory changes, bytes32 newActorId) = _authorizeK1ActorChange(newPk);
+        (Keystore.AccountChange[] memory changes, bytes32 newActorId) = _authorizeK1ChangeArray(newPk);
 
-        uint64 seq = accountConfiguration.getChangeSequences(account).local;
-        SignedActorChanges[] memory changeSets = new SignedActorChanges[](1);
-        changeSets[0] = _signedSet(account, seq, ACTOR_PK, changes);
+        Keystore.SignedAccountChanges[] memory changeSets = new Keystore.SignedAccountChanges[](1);
+        changeSets[0] = _localBatch(ACTOR_PK, account, changes);
 
         bytes32 userOpHash = keccak256("rotate-and-go");
         bytes memory opAuth = _buildK1Auth(newPk, userOpHash);
-        bytes memory signature = abi.encode(SIGNED_ACTOR_CHANGES_MAGIC, changeSets, opAuth);
+        bytes memory signature = abi.encode(SIGNED_ACCOUNT_CHANGES_MAGIC, changeSets, opAuth);
         PackedUserOperation memory userOp = _buildUserOp(account, signature);
 
         vm.prank(ENTRY_POINT);
         assertEq(BackwardsCompatible4337Account(payable(account)).validateUserOp(userOp, userOpHash, 0), 0);
-        assertTrue(accountConfiguration.isActor(account, newActorId));
+        assertTrue(_isActor(account, newActorId));
     }
 
     /// @notice Multiple independently-signed change sets are applied in order: the owner authorizes key B, then
     ///         key B (now active) authorizes key C, all in one op. The op is then authenticated by C's `opAuth`.
-    function test_validateUserOp_appliesMultipleSignedActorChangeSets() public {
+    function test_validateUserOp_appliesMultipleSignedAccountChangeSets() public {
         (address account,) = _create4337Account(ACTOR_PK);
 
         uint256 pkB = 101;
         uint256 pkC = 102;
-        (AccountConfiguration.ActorChange[] memory changesB, bytes32 actorB) = _authorizeK1ActorChange(pkB);
-        (AccountConfiguration.ActorChange[] memory changesC, bytes32 actorC) = _authorizeK1ActorChange(pkC);
+        (Keystore.AccountChange[] memory changesB, bytes32 actorB) = _authorizeK1ChangeArray(pkB);
+        (Keystore.AccountChange[] memory changesC, bytes32 actorC) = _authorizeK1ChangeArray(pkC);
 
-        uint64 seq = accountConfiguration.getChangeSequences(account).local;
-        SignedActorChanges[] memory changeSets = new SignedActorChanges[](2);
-        changeSets[0] = _signedSet(account, seq, ACTOR_PK, changesB); // signed by owner
-        changeSets[1] = _signedSet(account, seq + 1, pkB, changesC); // signed by B (active after set 0)
+        uint64 word = _localSeqWord(account);
+        Keystore.SignedAccountChanges[] memory changeSets = new Keystore.SignedAccountChanges[](2);
+        // Set 0 signed by owner at the current sequence word; set 1 signed by B at the next sequence.
+        changeSets[0] = _signBatch(ACTOR_PK, account, Keystore.AccountChangeChannel.Local, word, changesB);
+        changeSets[1] = _signBatch(pkB, account, Keystore.AccountChangeChannel.Local, word + 1, changesC);
 
         bytes32 userOpHash = keccak256("chain-of-rotations");
         bytes memory opAuth = _buildK1Auth(pkC, userOpHash); // op signed by C (active after set 1)
-        bytes memory signature = abi.encode(SIGNED_ACTOR_CHANGES_MAGIC, changeSets, opAuth);
+        bytes memory signature = abi.encode(SIGNED_ACCOUNT_CHANGES_MAGIC, changeSets, opAuth);
         PackedUserOperation memory userOp = _buildUserOp(account, signature);
 
         vm.prank(ENTRY_POINT);
         assertEq(BackwardsCompatible4337Account(payable(account)).validateUserOp(userOp, userOpHash, 0), 0);
-        assertTrue(accountConfiguration.isActor(account, actorB));
-        assertTrue(accountConfiguration.isActor(account, actorC));
+        assertTrue(_isActor(account, actorB));
+        assertTrue(_isActor(account, actorC));
     }
 
     /// @notice Applying changes does NOT authorize the op: a valid change set with an `opAuth` that does not sign
     ///         this userOpHash fails validation.
-    function test_validateUserOp_signedActorChanges_requiresOpAuth() public {
+    function test_validateUserOp_signedAccountChanges_requiresOpAuth() public {
         (address account,) = _create4337Account(ACTOR_PK);
 
         uint256 newPk = 101;
-        (AccountConfiguration.ActorChange[] memory changes,) = _authorizeK1ActorChange(newPk);
+        (Keystore.AccountChange[] memory changes,) = _authorizeK1ChangeArray(newPk);
 
-        uint64 seq = accountConfiguration.getChangeSequences(account).local;
-        SignedActorChanges[] memory changeSets = new SignedActorChanges[](1);
-        changeSets[0] = _signedSet(account, seq, ACTOR_PK, changes);
+        Keystore.SignedAccountChanges[] memory changeSets = new Keystore.SignedAccountChanges[](1);
+        changeSets[0] = _localBatch(ACTOR_PK, account, changes);
 
         bytes32 userOpHash = keccak256("rotate-but-no-op-auth");
         bytes memory opAuth = _buildK1Auth(999, userOpHash); // unauthorized key
-        bytes memory signature = abi.encode(SIGNED_ACTOR_CHANGES_MAGIC, changeSets, opAuth);
+        bytes memory signature = abi.encode(SIGNED_ACCOUNT_CHANGES_MAGIC, changeSets, opAuth);
         PackedUserOperation memory userOp = _buildUserOp(account, signature);
 
         vm.prank(ENTRY_POINT);
@@ -331,34 +293,33 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
     }
 
     /// @notice An invalid change authorization fails validation and applies nothing.
-    function test_validateUserOp_signedActorChanges_invalidChangeAuthFails() public {
+    function test_validateUserOp_signedAccountChanges_invalidChangeAuthFails() public {
         (address account,) = _create4337Account(ACTOR_PK);
 
         uint256 newPk = 101;
-        (AccountConfiguration.ActorChange[] memory changes, bytes32 newActorId) = _authorizeK1ActorChange(newPk);
+        (Keystore.AccountChange[] memory changes, bytes32 newActorId) = _authorizeK1ChangeArray(newPk);
 
-        uint64 seq = accountConfiguration.getChangeSequences(account).local;
-        SignedActorChanges[] memory changeSets = new SignedActorChanges[](1);
-        changeSets[0] = _signedSet(account, seq, 999, changes); // signed by a non-owner key
+        Keystore.SignedAccountChanges[] memory changeSets = new Keystore.SignedAccountChanges[](1);
+        changeSets[0] = _localBatch(999, account, changes); // signed by a non-owner key
 
         bytes32 userOpHash = keccak256("op");
         bytes memory opAuth = _buildK1Auth(ACTOR_PK, userOpHash);
-        bytes memory signature = abi.encode(SIGNED_ACTOR_CHANGES_MAGIC, changeSets, opAuth);
+        bytes memory signature = abi.encode(SIGNED_ACCOUNT_CHANGES_MAGIC, changeSets, opAuth);
         PackedUserOperation memory userOp = _buildUserOp(account, signature);
 
         vm.prank(ENTRY_POINT);
         assertEq(BackwardsCompatible4337Account(payable(account)).validateUserOp(userOp, userOpHash, 0), 1);
-        assertFalse(accountConfiguration.isActor(account, newActorId));
+        assertFalse(_isActor(account, newActorId));
     }
 
     /// @notice An empty change-set batch is rejected (it must not authorize any op).
-    function test_validateUserOp_signedActorChanges_emptyBatchFails() public {
+    function test_validateUserOp_signedAccountChanges_emptyBatchFails() public {
         (address account,) = _create4337Account(ACTOR_PK);
 
-        SignedActorChanges[] memory changeSets = new SignedActorChanges[](0);
+        Keystore.SignedAccountChanges[] memory changeSets = new Keystore.SignedAccountChanges[](0);
         bytes32 userOpHash = keccak256("op");
         bytes memory opAuth = _buildK1Auth(ACTOR_PK, userOpHash);
-        bytes memory signature = abi.encode(SIGNED_ACTOR_CHANGES_MAGIC, changeSets, opAuth);
+        bytes memory signature = abi.encode(SIGNED_ACCOUNT_CHANGES_MAGIC, changeSets, opAuth);
         PackedUserOperation memory userOp = _buildUserOp(account, signature);
 
         vm.prank(ENTRY_POINT);
@@ -371,10 +332,10 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         (address account,) = _create4337Account(ACTOR_PK);
         uint256 scopedPk = 201;
         // A payer-only (non-SENDER) actor is not operational.
-        _authorizeScopedActor(account, ACTOR_PK, scopedPk, SCOPE_SPONSOR_PAYER, address(0), bytes32(0));
+        _authorizeScopedActor(account, ACTOR_PK, scopedPk, Scopes.SPONSOR_PAYER, address(0), bytes32(0));
 
         bytes32 hash = keccak256("sign me");
-        bytes memory authData = _buildK1Auth(scopedPk, hash);
+        bytes memory authData = _erc1271Auth(account, scopedPk, hash);
 
         // A non-operational scoped actor cannot ERC-1271 sign, so validation must fail.
         assertEq(DefaultAccount(payable(account)).isValidSignature(hash, authData), bytes4(0xFFFFFFFF));
@@ -384,10 +345,10 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         (address account,) = _create4337Account(ACTOR_PK);
         uint256 senderPk = 202;
         // A SENDER-without-POLICY actor is operational and can ERC-1271 sign.
-        _authorizeScopedActor(account, ACTOR_PK, senderPk, SCOPE_SENDER, address(0), bytes32(0));
+        _authorizeScopedActor(account, ACTOR_PK, senderPk, Scopes.SENDER, address(0), bytes32(0));
 
         bytes32 hash = keccak256("sign me");
-        bytes memory authData = _buildK1Auth(senderPk, hash);
+        bytes memory authData = _erc1271Auth(account, senderPk, hash);
 
         assertEq(DefaultAccount(payable(account)).isValidSignature(hash, authData), bytes4(0x1626ba7e));
     }
@@ -397,7 +358,7 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
 
         // The unrestricted admin actor (scope == 0x00) is operational and can ERC-1271 sign.
         bytes32 hash = keccak256("sign me");
-        bytes memory authData = _buildK1Auth(ACTOR_PK, hash);
+        bytes memory authData = _erc1271Auth(account, ACTOR_PK, hash);
 
         assertEq(DefaultAccount(payable(account)).isValidSignature(hash, authData), bytes4(0x1626ba7e));
     }
@@ -407,7 +368,7 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
     function test_validateUserOp_senderScopeAuthorizes() public {
         (address account,) = _create4337Account(ACTOR_PK);
         uint256 senderPk = 203;
-        _authorizeScopedActor(account, ACTOR_PK, senderPk, SCOPE_SENDER, address(0), bytes32(0));
+        _authorizeScopedActor(account, ACTOR_PK, senderPk, Scopes.SENDER, address(0), bytes32(0));
 
         bytes32 userOpHash = keccak256("op");
         PackedUserOperation memory userOp = _buildUserOp(account, _buildK1Auth(senderPk, userOpHash));
@@ -419,7 +380,7 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
     function test_validateUserOp_requiresSenderScope() public {
         (address account,) = _create4337Account(ACTOR_PK);
         uint256 nonSenderPk = 204;
-        _authorizeScopedActor(account, ACTOR_PK, nonSenderPk, SCOPE_SPONSOR_PAYER, address(0), bytes32(0));
+        _authorizeScopedActor(account, ACTOR_PK, nonSenderPk, Scopes.SPONSOR_PAYER, address(0), bytes32(0));
 
         bytes32 userOpHash = keccak256("op");
         PackedUserOperation memory userOp = _buildUserOp(account, _buildK1Auth(nonSenderPk, userOpHash));
@@ -435,7 +396,7 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         (address account,) = _create4337Account(ACTOR_PK);
         vm.deal(account, 1 ether);
         uint256 senderOnlyPk = 205;
-        _authorizeScopedActor(account, ACTOR_PK, senderOnlyPk, SCOPE_SENDER, address(0), bytes32(0));
+        _authorizeScopedActor(account, ACTOR_PK, senderOnlyPk, Scopes.SENDER, address(0), bytes32(0));
 
         bytes32 userOpHash = keccak256("op");
         PackedUserOperation memory userOp = _buildUserOp(account, _buildK1Auth(senderOnlyPk, userOpHash));
@@ -449,7 +410,7 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         (address account,) = _create4337Account(ACTOR_PK);
         vm.deal(account, 1 ether);
         uint256 pk = 206;
-        _authorizeScopedActor(account, ACTOR_PK, pk, SCOPE_SENDER | SCOPE_SELF_PAYER, address(0), bytes32(0));
+        _authorizeScopedActor(account, ACTOR_PK, pk, Scopes.SENDER | Scopes.SELF_PAYER, address(0), bytes32(0));
 
         bytes32 userOpHash = keccak256("op");
         PackedUserOperation memory userOp = _buildUserOp(account, _buildK1Auth(pk, userOpHash));
@@ -458,17 +419,15 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         assertEq(BackwardsCompatible4337Account(payable(account)).validateUserOp(userOp, userOpHash, 0.1 ether), 0);
     }
 
-    // ── SCOPE_POLICY (no native-dispatch call-target gating in this reduced 4337 bridge) ──
+    // ── Scopes.POLICY (no native-dispatch call-target gating in this reduced 4337 bridge) ──
 
     function test_validateUserOp_policyScopeOnly_rejectedForLackingSenderScope() public {
         (address account,) = _create4337Account(ACTOR_PK);
         address policyManager = address(0xB0B);
         uint256 pk = 207;
-        _authorizeScopedActor(
-            account, ACTOR_PK, pk, accountConfiguration.SCOPE_POLICY(), policyManager, keccak256("commit")
-        );
+        _authorizeScopedActor(account, ACTOR_PK, pk, Scopes.POLICY, policyManager, keccak256("commit"));
 
-        // A pure-SCOPE_POLICY actor lacks SCOPE_SENDER, so this reduced 4337 bridge rejects it outright — it does
+        // A pure-Scopes.POLICY actor lacks Scopes.SENDER, so this reduced 4337 bridge rejects it outright — it does
         // not replicate native-dispatch's policy-target call gating.
         bytes memory callData = _executeBatchCallData(policyManager, 0, abi.encodeCall(UserOpMockTarget.setValue, (1)));
         bytes32 userOpHash = keccak256(abi.encode("op", callData));
@@ -482,10 +441,10 @@ contract BackwardsCompatible4337AccountTest is AccountConfigurationTest {
         (address account,) = _create4337Account(ACTOR_PK);
         address policyManager = address(0xB0B);
         uint256 pk = 208;
-        uint8 scope = SCOPE_SENDER | accountConfiguration.SCOPE_POLICY();
+        uint16 scope = Scopes.SENDER | Scopes.POLICY;
         _authorizeScopedActor(account, ACTOR_PK, pk, scope, policyManager, keccak256("commit"));
 
-        // An actor combining SCOPE_POLICY | SCOPE_SENDER is authorized here exactly like any other SENDER-scoped
+        // An actor combining Scopes.POLICY | Scopes.SENDER is authorized here exactly like any other SENDER-scoped
         // actor: this reduced 4337 bridge does not confine its calls to the policy target (that enforcement is
         // native-dispatch, protocol-side behavior out of scope for this repo).
         bytes memory callData =

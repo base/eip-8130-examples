@@ -3,7 +3,7 @@ pragma solidity 0.8.36;
 
 import {Script, console} from "forge-std/Script.sol";
 
-import {AccountConfiguration} from "eip-8130/AccountConfiguration.sol";
+import {Keystore} from "eip-8130/Keystore.sol";
 import {BackwardsCompatible4337Account} from "../src/accounts/erc4337/BackwardsCompatible4337Account.sol";
 import {UpgradeableAccount} from "../src/accounts/upgradeable/UpgradeableAccount.sol";
 import {UpgradeableProxy} from "../src/accounts/upgradeable/UpgradeableProxy.sol";
@@ -13,7 +13,7 @@ address constant CREATE2_FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 bytes32 constant SALT = bytes32(0);
 
 /// @notice Deterministically deploys the example upgradeable and ERC-4337 account implementations.
-/// @dev AccountConfiguration is compiled from this repository's pinned eip-8130 submodule and deployed first.
+/// @dev The Keystore is compiled from this repository's pinned eip-8130 submodule and deployed first.
 ///      Every deployment is idempotent. These contracts are examples only, not canonical EIP-8130 infrastructure.
 contract Deploy is Script {
     error Create2DeploymentFailed();
@@ -32,16 +32,16 @@ contract Deploy is Script {
         if (!ok || addr.code.length == 0) revert Create2DeploymentFailed();
     }
 
-    function _accountConfigurationInit() internal pure returns (bytes memory) {
-        return type(AccountConfiguration).creationCode;
+    function _keystoreInit() internal pure returns (bytes memory) {
+        return type(Keystore).creationCode;
     }
 
-    function _upgradeableAccountInit(address accountConfiguration) internal pure returns (bytes memory) {
-        return abi.encodePacked(type(UpgradeableAccount).creationCode, abi.encode(accountConfiguration));
+    function _upgradeableAccountInit(address keystore) internal pure returns (bytes memory) {
+        return abi.encodePacked(type(UpgradeableAccount).creationCode, abi.encode(keystore));
     }
 
-    function _backwardsCompatible4337AccountInit(address accountConfiguration) internal pure returns (bytes memory) {
-        return abi.encodePacked(type(BackwardsCompatible4337Account).creationCode, abi.encode(accountConfiguration));
+    function _backwardsCompatible4337AccountInit(address keystore) internal pure returns (bytes memory) {
+        return abi.encodePacked(type(BackwardsCompatible4337Account).creationCode, abi.encode(keystore));
     }
 
     function _erc1167Runtime(address implementation) internal pure returns (bytes memory) {
@@ -49,14 +49,14 @@ contract Deploy is Script {
     }
 
     function _logAddresses(
-        address accountConfiguration,
+        address keystore,
         address upgradeableAccount,
         address backwardsCompatible4337Account
     ) internal pure {
         bytes memory upgradeableProxy = UpgradeableProxy.bytecode(upgradeableAccount);
         bytes memory erc4337Proxy = _erc1167Runtime(backwardsCompatible4337Account);
 
-        console.log("AccountConfiguration:              ", accountConfiguration);
+        console.log("Keystore:                         ", keystore);
         console.log("UpgradeableAccount implementation:", upgradeableAccount);
         console.log("BackwardsCompatible4337Account:   ", backwardsCompatible4337Account);
         console.log("");
@@ -73,20 +73,20 @@ contract Deploy is Script {
 
     /// @notice Previews implementation addresses and per-account proxy bytecode without deploying.
     function addresses() public pure {
-        address accountConfiguration = _addr(_accountConfigurationInit());
-        address upgradeableAccount = _addr(_upgradeableAccountInit(accountConfiguration));
-        address backwardsCompatible4337Account = _addr(_backwardsCompatible4337AccountInit(accountConfiguration));
+        address keystore = _addr(_keystoreInit());
+        address upgradeableAccount = _addr(_upgradeableAccountInit(keystore));
+        address backwardsCompatible4337Account = _addr(_backwardsCompatible4337AccountInit(keystore));
 
-        _logAddresses(accountConfiguration, upgradeableAccount, backwardsCompatible4337Account);
+        _logAddresses(keystore, upgradeableAccount, backwardsCompatible4337Account);
     }
 
     function run() public {
         vm.startBroadcast();
-        address accountConfiguration = _create2(_accountConfigurationInit());
-        address upgradeableAccount = _create2(_upgradeableAccountInit(accountConfiguration));
-        address backwardsCompatible4337Account = _create2(_backwardsCompatible4337AccountInit(accountConfiguration));
+        address keystore = _create2(_keystoreInit());
+        address upgradeableAccount = _create2(_upgradeableAccountInit(keystore));
+        address backwardsCompatible4337Account = _create2(_backwardsCompatible4337AccountInit(keystore));
         vm.stopBroadcast();
 
-        _logAddresses(accountConfiguration, upgradeableAccount, backwardsCompatible4337Account);
+        _logAddresses(keystore, upgradeableAccount, backwardsCompatible4337Account);
     }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.36;
 
+import {LibCall} from "solady/utils/LibCall.sol";
 import {LibERC7579} from "solady/accounts/LibERC7579.sol";
 import {EnumerableSetLib} from "solady/utils/EnumerableSetLib.sol";
 
@@ -17,7 +18,7 @@ import {
 /// @notice Minimal ERC-7579 + ERC-7821 account example for EIP-8130.
 ///
 ///         Auth: install {AccountConfigurationValidator} as a MODULE_TYPE_VALIDATOR. ERC-1271 and (optionally)
-///         UserOp validation go through that module into AccountConfiguration — not a key held in the account.
+///         UserOp validation go through that module into the Keystore — not a key held in the account.
 ///
 ///         Execution (two equivalent batch surfaces):
 ///           - {executeBatch} — typed `Call[]` (EIP-8130 / DefaultAccount). Preferred when the caller can ABI-encode
@@ -165,15 +166,15 @@ contract ERC7579Account is DefaultAccount, IERC7579Execution, IERC7579AccountCon
         }
     }
 
-    /// @dev Empty opData: require {DefaultAccount} caller auth. Non-empty: AccountConfiguration auth over a digest
-    ///      of `(mode, batch)` — the signature is not part of the digest, so it can sit in `opData` safely.
+    /// @dev Empty opData: require {DefaultAccount} caller auth. Non-empty: Keystore auth over a digest of
+    ///      `(mode, batch)` — the signature is not part of the digest, so it can sit in `opData` safely.
     function _authorizeExecute(bytes32 mode, bytes32[] calldata pointers, bytes calldata opData) internal view {
         if (opData.length == 0) {
             if (!_isAuthorizedCaller(msg.sender)) revert UnauthorizedExecution();
             return;
         }
         bytes32 digest = keccak256(abi.encode(EXECUTE_TYPEHASH, mode, _hashBatch(pointers)));
-        ACCOUNT_CONFIGURATION.authenticateActor(address(this), digest, opData);
+        KEYSTORE.authenticateActor(address(this), digest, opData);
     }
 
     function _hashBatch(bytes32[] calldata pointers) internal pure returns (bytes32 h) {
@@ -187,8 +188,9 @@ contract ERC7579Account is DefaultAccount, IERC7579Execution, IERC7579AccountCon
     function _executePointers(bytes32[] calldata pointers) internal {
         for (uint256 i; i < pointers.length; i++) {
             (address target, uint256 value, bytes calldata data) = LibERC7579.getExecution(pointers, i);
-            (bool success,) = target.call{value: value}(data);
-            if (!success) revert CallFailed();
+            // Bubble up the inner call's revert reason verbatim, mirroring {DefaultAccount.executeBatch}.
+            (bool success, bytes memory result) = target.call{value: value}(data);
+            if (!success) LibCall.bubbleUpRevert(result);
         }
     }
 }

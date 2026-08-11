@@ -39,7 +39,7 @@ contract UpgradeableAccount is DefaultAccount, UUPSUpgradeable {
     ///      signed authorization set the one-shot flag.
     error UpgradeNotInitiated();
 
-    constructor(address accountConfiguration) DefaultAccount(accountConfiguration) {}
+    constructor(address keystore) DefaultAccount(keystore) {}
 
     /// @dev {upgradeBySignature} is the only place that sets {_upgradeAuthorized}, so satisfying this confirms an
     ///      unrestricted-owner (scope 0) signature has already authorized the implementation change being applied.
@@ -67,7 +67,7 @@ contract UpgradeableAccount is DefaultAccount, UUPSUpgradeable {
     /// @param fromImplementation Expected current implementation (raw ERC-1967 slot value; address(0) when unset).
     /// @param toImplementation The implementation to upgrade to.
     /// @param data Optional initialization calldata delegatecalled on `toImplementation` (empty to skip).
-    /// @param auth Authenticator(20) || authenticator-specific data, authenticated by AccountConfiguration.
+    /// @param auth Authenticator(20) || authenticator-specific data, authenticated by the Keystore.
     function upgradeBySignature(
         address fromImplementation,
         address toImplementation,
@@ -80,8 +80,10 @@ contract UpgradeableAccount is DefaultAccount, UUPSUpgradeable {
             abi.encode(SIGNED_UPGRADE_TYPEHASH, address(this), fromImplementation, toImplementation, keccak256(data))
         );
 
-        // Only an unrestricted owner (scope 0) may authorize an upgrade; there is no elevated "admin" scope bit.
-        (, uint8 scope,) = ACCOUNT_CONFIGURATION.authenticateActor(address(this), digest, auth);
+        // Only an unrestricted owner (scope 0) may authorize an upgrade; there is no elevated "admin" scope bit. The
+        // digest is self-binding (account + from + to + dataHash), so it authenticates directly via the Keystore
+        // rather than through the account-scoped signature envelope.
+        (, uint16 scope) = KEYSTORE.authenticateActor(address(this), digest, auth);
         if (scope != 0) revert UpgradeUnauthorized();
 
         // Reuse Solady's tested upgrade path (proxiableUUID check, Upgraded event, optional init delegatecall).
