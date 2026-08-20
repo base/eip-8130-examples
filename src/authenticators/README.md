@@ -5,7 +5,8 @@
 > `WebAuthnAuthenticator`, `DelegateAuthenticator`, plus built-in `K1_AUTHENTICATOR` at `address(1)`).
 
 These contracts implement `IAuthenticator.authenticate(hash, data) → actorId`. They are the old
-`src/verifiers/` set (renamed verifier → authenticator) plus a toy privacy-pool gas payer.
+`src/verifiers/` set (renamed verifier → authenticator) plus a payer policy for the toy privacy pool
+in [`src/privacy/`](../privacy/).
 
 ## Transaction context
 
@@ -47,7 +48,6 @@ whole. All of them need `{IExtendedTransactionContext}` (see above).
 |------|------|
 | `gas-payers/ChainlinkPayerAuthenticator` | ERC-20 sponsorship priced via a Chainlink ETH/USD feed; optional blocklist |
 | `gas-payers/AeroPayerAuthenticator` | ERC-20 sponsorship quoted via Aerodrome WETH/TOKEN |
-| `gas-payers/SimplePoolAuth` | Privacy-pool spend sponsorship; `{SimplePool}` is the example pool |
+| `gas-payers/SimplePoolAuth` | Sponsors a [`SimplePool`](../privacy/SimplePool.sol) spend (phase 0: spend + `payFee`) |
 
-`SimplePool` is a toy encrypted-note privacy pool: public `deposit`, self-verifying `spend`, and an
-`isValidSpend` view the authenticator STATICCALLs at validation. The pool has no TX_CONTEXT awareness.
+The pool is not an authenticator — see [`src/privacy/README.md`](../privacy/README.md).

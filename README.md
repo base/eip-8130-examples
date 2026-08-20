@@ -2,7 +2,7 @@
 
 > **Warning** — Unaudited example code. Not for production use.
 
-Example (non-canonical) EIP-8130 account wallets and authenticators, extracted from the core
+Example (non-canonical) EIP-8130 account wallets, authenticators, and a toy privacy pool, extracted from the core
 [`base/eip-8130`](https://github.com/base/eip-8130) repository. Accounts build on the canonical `DefaultAccount`
 and defer all authorization to the `Keystore` system contract.
 
@@ -15,7 +15,8 @@ src/accounts/
   erc7579/       — ERC-7579 + ERC-7821 account; Keystore auth as a validator module
 src/authenticators/
   pure/          — stateless signature authenticators (AlwaysValid, BLS, Groth16, multisig, Schnorr)
-  gas-payers/    — payer-scoped authenticators (Chainlink, Aerodrome, SimplePool)
+  gas-payers/    — payer-scoped authenticators (Chainlink, Aerodrome, SimplePoolAuth)
+src/privacy/     — toy note pool + splitter (not 8130-aware; SimplePoolAuth sponsors spends)
 ```
 
 | Path | What |
@@ -26,6 +27,7 @@ src/authenticators/
 | `erc7579/ERC7579Account` | Minimal 7579 account; keeps `executeBatch(Call[])` and adds ERC-7821 `execute(mode, data)` |
 | `erc7579/AccountConfigurationValidator` | ERC-7579 validator module that authenticates via the `Keystore` |
 | `authenticators/` | Non-canonical authenticators — see [`src/authenticators/README.md`](src/authenticators/README.md) |
+| `privacy/SimplePool` | Toy note pool + splitter — see [`src/privacy/README.md`](src/privacy/README.md) |
 
 ## Authorization model
 
@@ -49,6 +51,12 @@ Auth for the 7579 example goes through `{AccountConfigurationValidator}` (a `MOD
 See [`src/authenticators/README.md`](src/authenticators/README.md). These are non-canonical. Canonical
 authenticators (`P256`, `WebAuthn`, `Delegate`, built-in K1) stay in `base/eip-8130`. Gas-payer examples
 need call/gas/maxCost reads that the shipped `ITransactionContext` precompile does not provide.
+
+## Privacy pool
+
+See [`src/privacy/README.md`](src/privacy/README.md). A withdraw-to-escrow note pool with public amounts
+and a keccak tree — not full privacy. `{SimplePoolAuth}` is the 8130 payer policy that pins a spend
+against it.
 
 ## Deployment
 
