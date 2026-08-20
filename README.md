@@ -2,8 +2,8 @@
 
 > **Warning** — Unaudited example code. Not for production use.
 
-Example (non-canonical) EIP-8130 account wallets, extracted from the core
-[`base/eip-8130`](https://github.com/base/eip-8130) repository. These build on the canonical `DefaultAccount`
+Example (non-canonical) EIP-8130 account wallets and authenticators, extracted from the core
+[`base/eip-8130`](https://github.com/base/eip-8130) repository. Accounts build on the canonical `DefaultAccount`
 and defer all authorization to the `Keystore` system contract.
 
 ## Layout
@@ -13,6 +13,9 @@ src/accounts/
   upgradeable/   — UUPS-upgradeable DefaultAccount + UpgradeableProxy
   erc4337/       — opt-in ERC-4337 account (validateUserOp) for non-8130 chains
   erc7579/       — ERC-7579 + ERC-7821 account; Keystore auth as a validator module
+src/authenticators/
+  pure/          — stateless signature authenticators (AlwaysValid, BLS, Groth16, multisig, Schnorr)
+  gas-payers/    — payer-scoped authenticators (Chainlink, Aerodrome, SimplePool)
 ```
 
 | Path | What |
@@ -22,6 +25,7 @@ src/accounts/
 | `erc4337/BackwardsCompatible4337Account` | `DefaultAccount` + `validateUserOp` for bundler/EntryPoint support |
 | `erc7579/ERC7579Account` | Minimal 7579 account; keeps `executeBatch(Call[])` and adds ERC-7821 `execute(mode, data)` |
 | `erc7579/AccountConfigurationValidator` | ERC-7579 validator module that authenticates via the `Keystore` |
+| `authenticators/` | Non-canonical authenticators — see [`src/authenticators/README.md`](src/authenticators/README.md) |
 
 ## Authorization model
 
@@ -39,6 +43,12 @@ Same capability — atomic batch calls — different encoding:
 - **`execute(mode, executionData)`** — ERC-7821 / ERC-7579 wallet encoding (`abi.encode(calls)` ± `opData`). Prefer this for wallet/tooling interoperability.
 
 Auth for the 7579 example goes through `{AccountConfigurationValidator}` (a `MODULE_TYPE_VALIDATOR`), not a key stored on the account.
+
+## Authenticators
+
+See [`src/authenticators/README.md`](src/authenticators/README.md). These are non-canonical. Canonical
+authenticators (`P256`, `WebAuthn`, `Delegate`, built-in K1) stay in `base/eip-8130`. Gas-payer examples
+need call/gas/maxCost reads that the shipped `ITransactionContext` precompile does not provide.
 
 ## Deployment
 
