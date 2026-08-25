@@ -14,9 +14,15 @@ Gas-payer authenticators inspect the transaction's calls, gas limit, and max cos
 The shipped `{ITransactionContext}` precompile in `eip-8130` does **not** expose those methods (only
 sender / payer / senderActorId, and only while the protocol is dispatching calls). These examples
 therefore cannot run against that precompile as-shipped — they take an `{IExtendedTransactionContext}`
-address instead. BLS aggregation is a separate block-storage hook (`{IBLSAggregateContext}`): inclusion
-still uses `{BLSAuthenticator}` per tx; a sealed block stores one G2 and pointers. Demo:
-`forge script script/BLSAggregateDemo.s.sol`.
+address instead.
+
+Two aggregation sketches live here:
+
+- **Pairing-sum (BLS-only):** inclusion still uses `{BLSAuthenticator}` per tx; a sealed block stores one G2
+  and pointers (`{IBLSAggregateContext}`). Demo: `forge script script/BLSAggregateDemo.s.sol`.
+- **Draft-shaped (representation byte + facts):** inline and aggregated share one `actorId`; a mock context
+  stubs the block STARK and `isDependencyProven`. See [`aggregation/`](aggregation/).
+  Demo: `forge script script/SignatureAggregationDemo.s.sol`.
 
 ## Buckets
 
@@ -53,3 +59,12 @@ whole. All of them need `{IExtendedTransactionContext}` (see above).
 | `gas-payers/SimplePoolAuth` | Sponsors a [`SimplePool`](../privacy/SimplePool.sol) spend (phase 0: spend + `payFee`) |
 
 The pool is not an authenticator — see [`src/privacy/README.md`](../privacy/README.md).
+
+### Signature aggregation (draft stub)
+
+| Path | What |
+|------|------|
+| `aggregation/HashSchemeAuthenticator` | Cheap ML-DSA stand-in (`sig = keccak256(hash ‖ pk)`) with INLINE / AGGREGATED |
+| `aggregation/AggregatableBLSAuthenticator` | Real BLS INLINE; AGGREGATED reads `{isFactProven}` |
+| `aggregation/AggregationWrapper` | `AGG_WRAP`: `message = keccak256(hash ‖ depsCommitment)` + optional inner auth |
+| `aggregation/MockAggregationContext` | Stub STARK / TX_CONTEXT (`proveFact`, `isDependencyProven`) |
