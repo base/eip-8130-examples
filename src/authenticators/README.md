@@ -14,7 +14,9 @@ Gas-payer authenticators inspect the transaction's calls, gas limit, and max cos
 The shipped `{ITransactionContext}` precompile in `eip-8130` does **not** expose those methods (only
 sender / payer / senderActorId, and only while the protocol is dispatching calls). These examples
 therefore cannot run against that precompile as-shipped — they take an `{IExtendedTransactionContext}`
-address instead.
+address instead. BLS aggregation is a separate block-storage hook (`{IBLSAggregateContext}`): inclusion
+still uses `{BLSAuthenticator}` per tx; a sealed block stores one G2 and pointers. Demo:
+`forge script script/BLSAggregateDemo.s.sol`.
 
 ## Buckets
 

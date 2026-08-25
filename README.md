@@ -17,6 +17,7 @@ src/authenticators/
   pure/          — stateless signature authenticators (AlwaysValid, BLS, Groth16, multisig, Schnorr)
   gas-payers/    — payer-scoped authenticators (Chainlink, Aerodrome, SimplePoolAuth)
 src/privacy/     — toy note pool + splitter (not 8130-aware; SimplePoolAuth sponsors spends)
+script/          — Deploy.s.sol; BLSAggregateDemo.s.sol (10 BLS txs + 1 k1, then compress)
 ```
 
 | Path | What |
