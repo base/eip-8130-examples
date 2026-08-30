@@ -80,11 +80,11 @@ contract BackwardsCompatible4337Account is DefaultAccount {
     ///      STO-022, requiring the Keystore factory to be staked.
     ///
     ///      Op authentication (both paths) enforces the verified actor's scope:
-    ///        - the actor must be unrestricted (scope 0x00) or hold {Scopes.SENDER} to authorize the calls;
+    ///        - the actor must be unrestricted (scope 0x00) or hold {Scopes.OPERATOR} to authorize the calls;
     ///        - a self-funded op (`missingAccountFunds != 0`) additionally requires {Scopes.SELF_PAYER}.
     ///      This reduced 4337 bridge does not replicate the native-dispatch policy-target gate: a Scopes.POLICY
-    ///      actor without Scopes.SENDER is rejected here by construction (see {_authorize}), and this repo does not
-    ///      implement protocol-side lane/exclusivity checks for actors that combine Scopes.POLICY with Scopes.SENDER.
+    ///      actor without Scopes.OPERATOR is rejected here by construction (see {_authorize}), and this repo does not
+    ///      implement protocol-side lane/exclusivity checks for actors that combine Scopes.POLICY with Scopes.OPERATOR.
     function _validateSignature(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
         internal
         returns (bool)
@@ -122,7 +122,7 @@ contract BackwardsCompatible4337Account is DefaultAccount {
     /// @return scope The verified actor's scope (0x00 = unrestricted owner).
     function _authenticate(bytes32 hash, bytes memory auth) internal view returns (bool valid, uint16 scope) {
         // actorId and the policy gate are protocol-side / policy-manager concerns this reduced 4337 bridge does not
-        // replicate: a Scopes.POLICY actor is rejected below by the Scopes.SENDER check (see {_authorize}), since
+        // replicate: a Scopes.POLICY actor is rejected below by the Scopes.OPERATOR check (see {_authorize}), since
         // this repo does not implement protocol-side lane/exclusivity checks or the policy-commitment gate. The
         // userOpHash is already replay-safe (it binds chainId + EntryPoint + sender), so the op is authenticated
         // directly rather than through the account-scoped signature envelope.
@@ -137,18 +137,18 @@ contract BackwardsCompatible4337Account is DefaultAccount {
     ///         Split out from {_authenticate} so the two concerns — who signed vs. what they may do — are
     ///         independently reviewable and overridable.
     /// @dev Enforces:
-    ///        - scope 0x00 is an unrestricted owner; any other actor must hold {Scopes.SENDER} to authorize the calls;
+    ///        - scope 0x00 is an unrestricted owner; any other actor must hold {Scopes.OPERATOR} to authorize the calls;
     ///        - a self-funded op (`missingAccountFunds != 0`) additionally requires {Scopes.SELF_PAYER}.
-    ///      A Scopes.POLICY actor without Scopes.SENDER fails the check below by construction — this reduced 4337
+    ///      A Scopes.POLICY actor without Scopes.OPERATOR fails the check below by construction — this reduced 4337
     ///      bridge does not give policy-gated actors special call-target enforcement (that is native-dispatch,
-    ///      protocol-side behavior out of scope for this repo). An actor combining Scopes.POLICY | Scopes.SENDER is
-    ///      authorized here exactly like any other SENDER-scoped actor.
+    ///      protocol-side behavior out of scope for this repo). An actor combining Scopes.POLICY | Scopes.OPERATOR is
+    ///      authorized here exactly like any other OPERATOR-scoped actor.
     /// @param scope The verified actor's scope (0x00 = unrestricted owner).
     /// @param missingAccountFunds The prefund the account owes the EntryPoint; non-zero means a self-funded op.
     function _authorize(uint16 scope, uint256 missingAccountFunds) internal view virtual returns (bool) {
         // scope 0x00 = unrestricted owner; otherwise the actor must explicitly hold the required scopes.
         if (scope != 0) {
-            if (scope & Scopes.SENDER == 0) return false;
+            if (scope & Scopes.OPERATOR == 0) return false;
             if (missingAccountFunds != 0 && scope & Scopes.SELF_PAYER == 0) return false;
         }
         return true;

@@ -194,7 +194,7 @@ contract UpgradeableAccountTest is KeystoreTest {
     /// @dev Closes the gap the plain self-call check would otherwise leave open: batching a call to
     ///      `upgradeToAndCall` targeting `address(this)` makes that inner call's `msg.sender == address(this)`
     ///      too, but `executeBatch` never checks for an unrestricted-owner scope specifically (only that the
-    ///      caller is authorized to drive calls at all, e.g. any SENDER-scoped actor) — so this must revert
+    ///      caller is authorized to drive calls at all, e.g. any OPERATOR-scoped actor) — so this must revert
     ///      regardless of who can call `executeBatch`. The inner UpgradeNotInitiated revert bubbles up verbatim.
     function test_upgrade_viaExecuteBatch_reverts() public {
         (address account,) = _createUpgradeableAccount(ACTOR_PK);

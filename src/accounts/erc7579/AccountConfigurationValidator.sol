@@ -59,7 +59,7 @@ contract AccountConfigurationValidator is IERC7579Validator {
 
     /// @inheritdoc IERC7579Validator
     /// @dev `msg.sender` is the smart account. Uses {Keystore.validateSignature} and gates on {Scopes.isOperator}
-    ///      so only operational actors (admin, or SENDER without POLICY) may produce a valid ERC-1271 result,
+    ///      so only operational actors (admin, or OPERATOR) may produce a valid ERC-1271 result,
     ///      mirroring {DefaultAccount.isValidSignature}. `signature` is the account-scoped envelope
     ///      `sigType(1) || authenticator(20) || data`.
     function isValidSignatureWithSender(address, bytes32 hash, bytes calldata signature)

@@ -53,7 +53,7 @@ contract ERC7579Account is DefaultAccount, IERC7579Execution, IERC7579AccountCon
     /// @dev Module does not report the claimed type.
     error MismatchedModuleType(uint256 moduleTypeId, address module);
 
-    constructor(address accountConfiguration) DefaultAccount(accountConfiguration) {}
+    constructor(address keystore) DefaultAccount(keystore) {}
 
     // ══════════════════════════════════════════════
     //  ERC-7579 ACCOUNT CONFIG

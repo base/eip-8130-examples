@@ -48,11 +48,10 @@ contract Deploy is Script {
         return abi.encodePacked(hex"363d3d373d3d3d363d73", implementation, hex"5af43d82803e903d91602b57fd5bf3");
     }
 
-    function _logAddresses(
-        address keystore,
-        address upgradeableAccount,
-        address backwardsCompatible4337Account
-    ) internal pure {
+    function _logAddresses(address keystore, address upgradeableAccount, address backwardsCompatible4337Account)
+        internal
+        pure
+    {
         bytes memory upgradeableProxy = UpgradeableProxy.bytecode(upgradeableAccount);
         bytes memory erc4337Proxy = _erc1167Runtime(backwardsCompatible4337Account);
 

@@ -13,6 +13,7 @@ src/accounts/
   upgradeable/   — UUPS-upgradeable DefaultAccount + UpgradeableProxy
   erc4337/       — opt-in ERC-4337 account (validateUserOp) for non-8130 chains
   erc7579/       — ERC-7579 + ERC-7821 account; Keystore auth as a validator module
+src/factory/     — SETDELEGATE import factory; initcode CREATE2 + calldata-import factory
 src/authenticators/
   pure/          — stateless signature authenticators (AlwaysValid, BLS, Groth16, multisig, Schnorr)
   gas-payers/    — payer-scoped authenticators (Chainlink, Aerodrome, SimplePoolAuth)
@@ -28,6 +29,7 @@ script/          — Deploy.s.sol; BLSAggregateDemo.s.sol; SignatureAggregationD
 | `erc4337/BackwardsCompatible4337Account` | `DefaultAccount` + `validateUserOp` for bundler/EntryPoint support |
 | `erc7579/ERC7579Account` | Minimal 7579 account; keeps `executeBatch(Call[])` and adds ERC-7821 `execute(mode, data)` |
 | `erc7579/AccountConfigurationValidator` | ERC-7579 validator module that authenticates via the `Keystore` |
+| `factory/` | SETDELEGATE factory + bootstrap account — see [`src/factory/README.md`](src/factory/README.md) |
 | `authenticators/` | Non-canonical authenticators — see [`src/authenticators/README.md`](src/authenticators/README.md) |
 | `privacy/SimplePool` | Toy note pool + splitter — see [`src/privacy/README.md`](src/privacy/README.md) |
 
