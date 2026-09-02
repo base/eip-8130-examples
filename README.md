@@ -16,6 +16,9 @@ src/accounts/
 src/factory/     — SETDELEGATE import factory; initcode CREATE2 + calldata-import factory
 src/authenticators/
   pure/          — stateless signature authenticators (AlwaysValid, BLS, Groth16, multisig, Schnorr)
+  keystore/      — Keystore-bounded M-of-N (each signer is another 8130 account)
+  homechain/     — cross-chain admin: honor a key proven admin on a remote "home" chain (L1/L2)
+    prover/      — real MPT state-proof prover (OZ TrieProof/RLP) for L1, Optimism, Base, Arbitrum
   gas-payers/    — payer-scoped authenticators (Chainlink, Aerodrome, SimplePoolAuth)
   aggregation/   — draft-shaped INLINE/AGGREGATED + AGG_WRAP + STARK stub
 src/privacy/     — toy note pool + splitter (not 8130-aware; SimplePoolAuth sponsors spends)
