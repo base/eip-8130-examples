@@ -86,6 +86,18 @@ Verification is real MPT (tests build single-leaf trie fixtures and validate slo
 Two example simplifications remain for production: the caller picks which output/confirmData slot is read (must be
 constrained + finalized), and non-inclusion (a *missing* actor) is not positively proven — it just reverts.
 
+### Sessions (churn tier)
+
+The high-churn companion to the home-chain **admin tier**: a committed, short-lived, non-admin session key
+redeemed by its own fresh signature. Register the anchor (`root` / operator id) once with a bounded scope and a
+short expiry — the Keystore then caps every session by that anchor's liveness (cascading expiry). See
+[`sessions/README.md`](sessions/README.md) for the two-tier model and the full property table.
+
+| Path | What |
+|------|------|
+| `sessions/MerkleSessionAuthenticator` | Committed set: `actorId = root`; a membership proof + the leaf's fresh signature; one commitment covers many keys |
+| `sessions/OperatorSessionAuthenticator` | Operator-minted: a live non-admin operator grants a session key; `actorId` = the operator's — so it inherits the operator's scope and dies when the operator does |
+
 ### Gas payers
 
 Payer-scoped actors. They ignore the signed `hash` and instead pin phase-0 repayment so the payer is made
